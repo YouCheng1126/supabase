@@ -1,0 +1,35 @@
+name: Supabase Database Backup
+
+on:
+  schedule:
+    - cron: '0 0 * * 0' # 每週日凌晨執行
+  workflow_dispatch:
+
+jobs:
+  backup:
+    runs-on: ubuntu-latest
+    steps:
+      - name: 檢出儲存庫
+        uses: actions/checkout@v4
+
+      - name: 安裝 PostgreSQL 客戶端
+        run: sudo apt-get install -y postgresql-client
+
+      - name: 執行資料庫備份
+        run: |
+          mkdir -p backups
+          DATE=$(date +'%Y-%m-%d')
+          pg_dump "${{ secrets.SUPABASE_DB_URL }}" -c -O -f backups/db-backup-$DATE.sql
+
+      - name: 清理舊備份並提交 (僅保留 30 天內)
+        run: |
+          git config --global user.name "github-actions[bot]"
+          git config --global user.email "github-actions[bot]@users.noreply.github.com"
+          
+          # 關鍵步驟：刪除 backups 資料夾下超過 30 天的 .sql 檔案
+          find backups/ -name "*.sql" -type f -mtime +30 -exec rm {} \;
+          
+          git add backups/*
+          # 如果刪除檔案後沒有新的變更，git commit 會報錯，所以加上 || echo 確保腳本繼續執行
+          git commit -m "chore: 🗄️ automated database backup and cleanup" || echo "No changes to commit"
+          git push
